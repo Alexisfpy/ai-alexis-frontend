@@ -1,18 +1,24 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useUser, SignInButton, UserButton } from '@clerk/nextjs';
 
 export default function Home() {
-  // --- ESTADOS ---
+  // --- AUTENTICACIÓN CON CLERK ---
+  const { user, isLoaded, isSignedIn } = useUser();
+
+  // Si el usuario inició sesión, usa su ID único de Clerk; si no, usa usuario invitado
+  const userId = user?.id || 'guest_user';
+
+  // --- ESTADOS DE LA APLICACIÓN ---
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: '¡Hola, Alexis! Soy AI Alexis. Todos los sistemas están en línea y conectados a la nube. ¿En qué te puedo ayudar hoy?'
+      content: '¡Hola! Soy AI Alexis. Todos los sistemas están en línea. Inicia sesión para personalizar tu experiencia.'
     }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [userId, setUserId] = useState('fernando'); // ID de usuario en Atlas
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -24,10 +30,9 @@ export default function Home() {
   const audioChunksRef = useRef([]);
   const recordingStartTimeRef = useRef(0);
 
-  // Variable de entorno apuntando a Render
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://ai-alexis-backend.onrender.com/api/v1';
 
-  // Auto-scroll al recibir mensajes
+  // Auto-scroll al final del chat al recibir mensajes
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -35,6 +40,36 @@ export default function Home() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, loading]);
+
+  // --- CARGAR HISTORIAL DE MONGO ATLAS AL INICIAR SESIÓN ---
+  useEffect(() => {
+    const cargarHistorial = async () => {
+      if (!isSignedIn || !user) return;
+
+      try {
+        const response = await fetch(`${API_URL}/assistant/history/${user.id}`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+
+        if (data.messages && data.messages.length > 0) {
+          setMessages(data.messages);
+        } else {
+          const nombreUsuario = user.firstName || user.username || 'Alexis';
+          setMessages([
+            {
+              role: 'assistant',
+              content: `¡Bienvenido de nuevo, ${nombreUsuario}! Tu sesión está iniciada de forma segura. ¿En qué te puedo ayudar hoy?`
+            }
+          ]);
+        }
+      } catch (error) {
+        console.error('Error al recuperar el historial desde Atlas:', error);
+      }
+    };
+
+    cargarHistorial();
+  }, [isSignedIn, user]);
 
   // --- 1. ENVIAR MENSAJE DE TEXTO ---
   const handleSend = async (e) => {
@@ -57,9 +92,7 @@ export default function Home() {
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Error al conectar con el servidor');
-      }
+      if (!response.ok) throw new Error('Error al conectar con el servidor');
 
       const data = await response.json();
 
@@ -72,7 +105,7 @@ export default function Home() {
         ...prev,
         {
           role: 'assistant',
-          content: '⚠️ No se pudo establecer conexión con el servidor en Render. Comprueba la red o vuelve a intentarlo.'
+          content: '⚠️ No se pudo conectar con el backend. Comprueba la red o vuelve a intentarlo.'
         }
       ]);
     } finally {
@@ -80,7 +113,7 @@ export default function Home() {
     }
   };
 
-  // --- 2. SUBIR ARCHIVO PDF / CV ---
+  // --- 2. SUBIR PDF / CV ---
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -91,7 +124,7 @@ export default function Home() {
     }
 
     setUploading(true);
-    setUploadStatus('Subiendo y extrayendo CV...');
+    setUploadStatus('Subiendo CV...');
 
     const formData = new FormData();
     formData.append('file', file);
@@ -106,25 +139,25 @@ export default function Home() {
       if (!response.ok) throw new Error('Error al subir el CV');
 
       const data = await response.json();
-      setUploadStatus('✅ CV guardado en Atlas');
+      setUploadStatus('✅ CV guardado');
       
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: `📄 **Nuevo CV indexado con éxito para "${userId}"**: Archivo *${data.filename}* guardado de forma permanente en MongoDB Atlas Cloud.`
+          content: `📄 **Nuevo CV indexado**: Archivo *${data.filename}* guardado para tu usuario.`
         }
       ]);
     } catch (error) {
       setUploadStatus('❌ Error al subir');
-      alert('Ocurrió un error al subir el PDF a Atlas.');
+      alert('Ocurrió un error al subir el PDF.');
     } finally {
       setUploading(false);
       setTimeout(() => setUploadStatus(''), 4000);
     }
   };
 
-  // --- 3. GRABACIÓN Y ENVÍO DE NOTAS DE VOZ ---
+  // --- 3. GRABACIÓN DE NOTAS DE VOZ ---
   const startRecording = async (e) => {
     if (e) e.preventDefault();
     audioChunksRef.current = [];
@@ -143,8 +176,6 @@ export default function Home() {
 
       mediaRecorder.onstop = async () => {
         const duration = Date.now() - recordingStartTimeRef.current;
-        
-        // Evitar activaciones por clics rápidos (< 500ms)
         if (duration < 500) {
           stream.getTracks().forEach(track => track.stop());
           setIsRecording(false);
@@ -184,16 +215,13 @@ export default function Home() {
       });
       
       const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.detail || 'El servidor de voz ha rechazado la petición.');
-      }
+      if (!response.ok) throw new Error(data.detail || 'Error en el servidor de voz.');
       
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response, intent: data.intent }]);
     } catch (error) {
       setMessages((prev) => [
         ...prev, 
-        { role: 'assistant', content: `💥 Nota de voz: ${error.message}`, intent: 'ERROR' }
+        { role: 'assistant', content: `💥 Error de voz: ${error.message}`, intent: 'ERROR' }
       ]);
     } finally {
       setLoading(false);
@@ -202,7 +230,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans">
-      {/* HEADER */}
+      {/* BARRA SUPERIOR (HEADER) */}
       <header className="flex items-center justify-between px-6 py-4 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
@@ -214,7 +242,7 @@ export default function Home() {
           </span>
         </div>
 
-        {/* Acciones del Header (Subida de CV) */}
+        {/* BOTONES DE ACCIÓN Y USUARIO CLERK */}
         <div className="flex items-center gap-3">
           <input
             type="file"
@@ -226,8 +254,9 @@ export default function Home() {
           
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium transition-all shadow-md hover:shadow-blue-500/20 disabled:opacity-50 flex items-center gap-1.5"
+            disabled={uploading || !isSignedIn}
+            title={!isSignedIn ? 'Inicia sesión para subir tu CV' : 'Subir nuevo CV'}
+            className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium transition-all shadow-md disabled:opacity-50 flex items-center gap-1.5"
           >
             📄 {uploading ? 'Cargando...' : 'Subir CV'}
           </button>
@@ -237,17 +266,30 @@ export default function Home() {
               {uploadStatus}
             </span>
           )}
+
+          {/* COMPONENTE DE AUTENTICACIÓN CLERK */}
+          {isLoaded && (
+            <div>
+              {!isSignedIn ? (
+                <SignInButton mode="modal">
+                  <button className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-medium transition-all shadow-md">
+                    Iniciar Sesión
+                  </button>
+                </SignInButton>
+              ) : (
+                <UserButton afterSignOutUrl="/" />
+              )}
+            </div>
+          )}
         </div>
       </header>
 
-      {/* FEED DE MENSAJES */}
+      {/* ÁREA DE MENSAJES (CHAT) */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 max-w-4xl w-full mx-auto">
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`flex flex-col ${
-              msg.role === 'user' ? 'items-end' : 'items-start'
-            }`}
+            className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
           >
             <div
               className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap shadow-sm ${
@@ -281,13 +323,10 @@ export default function Home() {
         <div ref={messagesEndRef} />
       </main>
 
-      {/* CAJA DE ENTRADA CON MICRÓFONO Y TEXTO */}
+      {/* BARRA DE ENTRADA (TEXTO Y MICRÓFONO) */}
       <footer className="p-4 bg-slate-900/80 border-t border-slate-800 backdrop-blur-md">
-        <form
-          onSubmit={handleSend}
-          className="max-w-4xl mx-auto flex items-center gap-2"
-        >
-          {/* Botón del Micrófono */}
+        <form onSubmit={handleSend} className="max-w-4xl mx-auto flex items-center gap-2">
+          {/* Botón de Voz */}
           <button
             type="button"
             onMouseDown={startRecording}
@@ -306,13 +345,13 @@ export default function Home() {
             </svg>
           </button>
 
-          {/* Campo de Texto */}
+          {/* Input Texto */}
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isRecording}
-            placeholder={isRecording ? 'Escuchando... mantén pulsado' : 'Escribe un mensaje, pide optimizar tu CV o consulta el clima...'}
+            placeholder={isRecording ? 'Escuchando...' : 'Escribe un mensaje o pregunta por el clima...'}
             className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-60"
           />
 
@@ -320,7 +359,7 @@ export default function Home() {
           <button
             type="submit"
             disabled={loading || !input.trim() || isRecording}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-xl text-sm font-semibold transition-all shadow-lg hover:shadow-blue-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-xl text-sm font-semibold transition-all shadow-lg disabled:opacity-40"
           >
             Enviar
           </button>
