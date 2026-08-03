@@ -1,36 +1,146 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# 🤖 AI Alexis - Frontend (Next.js)
 
-## Getting Started
+Interfaz web moderna e interactiva para **AI Alexis**, el asistente virtual multimodal con IA. Desarrollada con **Next.js (App Router)**, **Tailwind CSS** y **Clerk**, permite interacción fluida por chat y voz en tiempo real, conectándose con el backend en FastAPI.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 🚀 Características Principales
+
+* 🔐 **Autenticación Multiusuario y Control de Acceso (Clerk):**
+  * Inicio de sesión seguro mediante cuentas de Google u otros proveedores OAuth / Email.
+  * Gestión de tokens y sesiones protegidas con `@clerk/nextjs` y Middleware en Next.js.
+  * Aislamiento total de datos y perfiles por ID único de usuario (`userId`).
+
+* 🧠 **Memoria Conversacional Persistente (MongoDB Atlas Cloud):**
+  * Guardado automático de todas las interacciones (texto, voz e intenciones) en la nube.
+  * Recuperación dinámica del historial al iniciar sesión o recargar la pantalla desde cualquier dispositivo.
+  * Inyección del contexto histórico conversacional y del perfil del usuario en las respuestas de Llama 3.
+
+* 🎙️ **Procesamiento de Voz en Tiempo Real (Whisper Large v3):**
+  * Botón *Push-to-Talk* ("Mantener para hablar") integrado directamente en la interfaz.
+  * Transcripción de audio de alta precisión mediante `groq/whisper-large-v3`.
+  * Conversión automática de notas de voz a texto e integración con la memoria de la IA.
+
+* 📄 **Indexación y Optimización de CV con Agentes Autónomos (CrewAI):**
+  * Subida y extracción directa de documentos PDF.
+  * Almacenamiento permanente del texto del CV en la colección `profiles` de MongoDB Atlas.
+  * Orquestación de una **Crew de Agentes de IA** (*Reclutador Técnico Senior* + *Consultor y Redactor Técnico*) para adaptar el currículum del usuario según ofertas laborales específicas y filtros ATS.
+
+* 🌤️ **Servicio Meteorológico en Tiempo Real (Open-Meteo):**
+  * Detección automática de ubicaciones mediante LLM.
+  * Consulta directa a la API de Open-Meteo para obtener temperaturas (máxima y mínima) y probabilidad de precipitación sin depender de búsquedas web genéricas.
+
+* 🌐 **Búsqueda Web en Tiempo Real (Tavily Search API + Optimización LLM):**
+  * Clasificador inteligente de intenciones (`WEATHER`, `CV_OPTIMIZATION`, `DOMOTICS_CONTROL`, `WEB_SEARCH`, `GENERAL_CHAT`).
+  * Integración con **Tavily Search API** para la extracción directa y precisa de información en tiempo real sin bloqueos en la nube.
+  * Optimizador de consultas para transformar lenguaje natural en palabras clave eficientes de búsqueda y síntesis de resultados actualizados.
+
+---
+
+## 🛠️ Tecnologías Utilizadas
+
+### **Frontend**
+* **Framework:** Next.js (React / App Router).
+* **Autenticación:** Clerk (`@clerk/nextjs`).
+* **Estilos:** Tailwind CSS con tema oscuro (*Dark Mode*).
+* **Audio:** MediaRecorder API (grabación WebM).
+
+### **Backend**
+* **Framework:** FastAPI (Python).
+* **Modelos LLM:** Groq / LiteLLM (`llama-3.1-8b-instant`, `groq/whisper-large-v3`).
+* **Orquestación Multi-Agente:** CrewAI.
+* **Base de Datos:** MongoDB Atlas Cloud (PyMongo).
+* **Búsquedas & Clima:** Tavily Search API (`tavily-python`), Open-Meteo API, DuckDuckGo Search (`duckduckgo_search`).
+
+### **Infraestructura & Cloud**
+* **Hosting App & API:** Render Cloud Platform.
+* **Base de Datos en la Nube:** MongoDB Atlas.
+* **Control de Versiones:** Git & GitHub.
+
+---
+
+## 📁 Estructura del Proyecto
+
+```text
+ai-alexis-frontend/
+├── public/                     # Recursos y archivos estáticos
+├── src/
+│   ├── app/
+│   │   ├── favicon.ico         # Icono de la aplicación
+│   │   ├── globals.css         # Estilos globales y configuración de Tailwind CSS
+│   │   ├── layout.js           # Layout raíz con Providers (Clerk Auth, Fuentes, etc.)
+│   │   └── page.js             # Interfaz principal (Chat, Control de Voz, Subida de CV)
+│   └── middleware.js           # Interceptor de seguridad y protección de rutas de Clerk
+├── .env.local                  # Variables de entorno locales (NO subir a GitHub)
+├── .gitignore                  # Archivos excluidos del control de versiones
+├── eslint.config.mjs           # Configuración de ESLint
+├── jsconfig.json               # Alias de rutas e importaciones de JavaScript
+├── next.config.mjs             # Configuración principal de Next.js
+├── package.json                # Dependencias, paquetes y scripts del proyecto
+├── postcss.config.mjs          # Configuración de PostCSS para Tailwind CSS
+└── README.md                   # Documentación oficial del frontend
+
+---
+
+## ⚙️ Variables de Entorno
+
+### **Backend (`.env`)**
+```ini
+GROQ_API_KEY=tu_api_key_de_groq
+MONGODB_URI=mongodb+srv://<usuario>:<password>@cluster0.mongodb.net/?retryWrites=true&w=majority
+TAVILY_API_KEY=tu_api_key_de_tavily
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### **Frontend (`.env.local`)**
+```ini
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+NEXT_PUBLIC_API_URL=[https://ai-alexis-backend.onrender.com/api/v1](https://ai-alexis-backend.onrender.com/api/v1)
+```
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 📌 Endpoints Principales de la API
 
-## Learn More
+| Método | Ruta | Descripción |
+| :--- | :--- | :--- |
+| `POST` | `/api/v1/assistant/chat` | Procesa mensajes de texto e interactúa con el LLM. |
+| `POST` | `/api/v1/assistant/voice` | Recibe audio WebM, transcribe con Whisper y responde. |
+| `POST` | `/api/v1/assistant/upload-cv` | Extrae y guarda el PDF del CV asociado al usuario en MongoDB Atlas. |
+| `GET`  | `/api/v1/assistant/history/{user_id}` | Obtiene el historial de mensajes de un usuario desde MongoDB Atlas. |
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 💻 Ejecución en Desarrollo Local
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. **Iniciar Backend:**
+   ```bash
+   cd ai-alexis-backend
+   uvicorn app.main:app --reload
+   ```
 
-## Deploy on Vercel
+2. **Iniciar Frontend:**
+   ```bash
+   cd ai-alexis-frontend
+   npm run dev
+   ```
+   Abre [http://localhost:3000](http://localhost:3000) en el navegador.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## ☁️ Despliegue en Producción (Render)
+
+1. **Backend (Web Service):** Conectar repositorio GitHub en Render, configurar entorno Python 3.11+, comando de inicio `uvicorn app.main:app --host 0.0.0.0 --port $PORT` y añadir variables `GROQ_API_KEY`, `MONGODB_URI` y `TAVILY_API_KEY`.
+2. **Frontend (Web Service / Static Site):** Conectar repositorio de Next.js, añadir variables `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` y `NEXT_PUBLIC_API_URL`.
+
+---
+
+## 🏆 Resumen: Arquitectura en Producción
+
+* 🔐 **Autenticación:** Clerk (Google / Email).
+* 🧠 **Memoria Persistente:** MongoDB Atlas Cloud (historial e identidad por `user_id`).
+* ⚡ **Inferencia de Alto Rendimiento:** Groq (`Llama 3.1 8B Instant`).
+* 🌐 **Búsqueda Web en Tiempo Real:** Tavily Search API.
+* 🎙️ **Transcripción de Voz:** Whisper Large v3.
+* 🤖 **Agentes Autónomos:** CrewAI para optimización de CVs.
+* 🌤️ **Servicio Meteorológico:** Open-Meteo API.
