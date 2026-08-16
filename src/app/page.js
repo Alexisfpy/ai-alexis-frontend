@@ -155,7 +155,7 @@ export default function Home() {
     if (!file) return;
 
     setUploading(true);
-    setUploadStatus('Indexando documento...');
+    setUploadStatus('Indexando...');
 
     const formData = new FormData();
     formData.append('file', file);
@@ -170,17 +170,17 @@ export default function Home() {
       if (!response.ok) throw new Error('Error al indexar el documento');
 
       const data = await response.json();
-      setUploadStatus('✅ Indexado');
+      setUploadStatus('✅ OK');
 
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: `📚 **Documento indexado con éxito**: *${data.filename}* (${data.chunks_indexed || 0} fragmentos vectoriales listos para consulta semántica).`
+          content: `📚 **Documento indexado**: *${data.filename}* (${data.chunks_indexed || 0} fragmentos vectorizados).`
         }
       ]);
     } catch (error) {
-      setUploadStatus('❌ Error al indexar');
+      setUploadStatus('❌ Error');
       alert('Ocurrió un error al subir el documento.');
     } finally {
       setUploading(false);
@@ -261,21 +261,21 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans">
-      {/* BARRA SUPERIOR (HEADER) */}
-      <header className="flex items-center justify-between px-6 py-4 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
-          <h1 className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+    <div className="flex flex-col h-[100dvh] w-full max-w-full overflow-x-hidden bg-slate-950 text-slate-100 font-sans">
+      {/* CABECERA (HEADER) RESPONSIVE */}
+      <header className="flex items-center justify-between px-3 sm:px-6 py-3 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md sticky top-0 z-10 w-full shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <h1 className="text-base sm:text-xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate">
             AI Alexis
           </h1>
-          <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">
+          <span className="hidden sm:inline-block text-[11px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700 shrink-0">
             Cloud 2026
           </span>
         </div>
 
-        {/* BOTONES DE ACCIÓN Y USUARIO CLERK */}
-        <div className="flex items-center gap-3">
+        {/* ACCIONES Y BOTÓN RAG */}
+        <div className="flex items-center gap-2 shrink-0">
           <input
             type="file"
             ref={fileInputRef}
@@ -288,24 +288,26 @@ export default function Home() {
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || !isSignedIn}
             title={!isSignedIn ? 'Inicia sesión para indexar documentos' : 'Subir documento a tu Base de Conocimiento'}
-            className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium transition-all shadow-md disabled:opacity-50 flex items-center gap-1.5"
+            className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2.5 sm:px-3 py-1.5 rounded-lg font-medium transition-all shadow-md disabled:opacity-50 flex items-center gap-1.5 shrink-0"
           >
-            📚 {uploading ? 'Indexando...' : 'Subir Documento (RAG)'}
+            <span>📚</span>
+            <span className="hidden sm:inline">{uploading ? 'Indexando...' : 'Subir Documento (RAG)'}</span>
+            <span className="sm:hidden">{uploading ? '...' : 'RAG'}</span>
           </button>
 
           {uploadStatus && (
-            <span className="text-xs text-emerald-400 font-medium hidden sm:inline">
+            <span className="text-[11px] text-emerald-400 font-medium">
               {uploadStatus}
             </span>
           )}
 
-          {/* COMPONENTE DE AUTENTICACIÓN CLERK */}
+          {/* CLERK LOGIN / AVATAR */}
           {isLoaded && (
-            <div>
+            <div className="shrink-0 flex items-center">
               {!isSignedIn ? (
                 <SignInButton mode="modal">
-                  <button className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-medium transition-all shadow-md">
-                    Iniciar Sesión
+                  <button className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 sm:px-3 py-1.5 rounded-lg font-medium transition-all shadow-md">
+                    Entrar
                   </button>
                 </SignInButton>
               ) : (
@@ -316,15 +318,15 @@ export default function Home() {
         </div>
       </header>
 
-      {/* ÁREA DE MENSAJES (CHAT) */}
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 max-w-4xl w-full mx-auto">
+      {/* CHAT / MENSAJES */}
+      <main className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4 max-w-4xl w-full mx-auto min-w-0">
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+            className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} w-full`}
           >
             <div
-              className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
+              className={`max-w-[88%] sm:max-w-[75%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed shadow-sm break-words ${
                 msg.role === 'user'
                   ? 'bg-blue-600 text-white rounded-br-none whitespace-pre-wrap'
                   : msg.intent === 'ERROR'
@@ -336,7 +338,7 @@ export default function Home() {
                 <img
                   src={msg.image}
                   alt="Adjunto"
-                  className="max-w-[220px] max-h-[160px] rounded-lg mb-2 object-cover border border-blue-400/30"
+                  className="max-w-[180px] sm:max-w-[220px] max-h-[140px] sm:max-h-[160px] rounded-lg mb-2 object-cover border border-blue-400/30"
                 />
               )}
 
@@ -349,7 +351,7 @@ export default function Home() {
               )}
             </div>
             {msg.intent && (
-              <span className="text-[10px] text-slate-500 mt-1 px-1 font-mono uppercase">
+              <span className="text-[9px] sm:text-[10px] text-slate-500 mt-1 px-1 font-mono uppercase">
                 Intención: {msg.intent}
               </span>
             )}
@@ -357,42 +359,41 @@ export default function Home() {
         ))}
 
         {loading && (
-          <div className="flex items-center gap-2 text-slate-400 text-sm bg-slate-900/50 border border-slate-800/80 w-fit px-4 py-2 rounded-2xl rounded-bl-none">
+          <div className="flex items-center gap-2 text-slate-400 text-xs sm:text-sm bg-slate-900/50 border border-slate-800/80 w-fit px-3 py-2 rounded-2xl rounded-bl-none">
             <div className="flex gap-1">
-              <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" />
-              <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:0.2s]" />
-              <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:0.4s]" />
+              <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-cyan-400 rounded-full animate-bounce" />
+              <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+              <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:0.4s]" />
             </div>
-            <span>Procesando consulta...</span>
+            <span>Procesando...</span>
           </div>
         )}
         <div ref={messagesEndRef} />
       </main>
 
-      {/* BARRA DE ENTRADA (TEXTO, IMAGEN Y MICRÓFONO) */}
-      <footer className="p-4 bg-slate-900/80 border-t border-slate-800 backdrop-blur-md">
+      {/* BARRA DE ENTRADA (INPUT FOOTER) */}
+      <footer className="p-2.5 sm:p-4 bg-slate-900/90 border-t border-slate-800 backdrop-blur-md shrink-0 w-full">
         {imagePreview && (
-          <div className="max-w-4xl mx-auto mb-3 flex items-center gap-3 bg-slate-950/60 p-2 rounded-xl border border-slate-800 w-fit">
+          <div className="max-w-4xl mx-auto mb-2 flex items-center gap-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800 w-fit">
             <div className="relative">
               <img
                 src={imagePreview}
                 alt="Vista previa"
-                className="w-12 h-12 object-cover rounded-lg border border-cyan-500/60 shadow-md"
+                className="w-10 h-10 object-cover rounded-lg border border-cyan-500/60"
               />
               <button
                 type="button"
                 onClick={handleRemoveImage}
-                className="absolute -top-1.5 -right-1.5 bg-red-600 hover:bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] shadow"
+                className="absolute -top-1 -right-1 bg-red-600 hover:bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[9px] shadow"
               >
                 ✕
               </button>
             </div>
-            <span className="text-xs text-slate-300 pr-2">Imagen adjunta lista para analizar</span>
+            <span className="text-[11px] text-slate-300 pr-1">Imagen lista</span>
           </div>
         )}
 
-        <form onSubmit={handleSend} className="max-w-4xl mx-auto flex items-center gap-2">
-          {/* Input Oculto de Imagen */}
+        <form onSubmit={handleSend} className="max-w-4xl mx-auto flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
           <input
             type="file"
             ref={imageInputRef}
@@ -401,20 +402,20 @@ export default function Home() {
             className="hidden"
           />
 
-          {/* Botón Adjuntar Imagen */}
+          {/* BOTÓN CLIP */}
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
             disabled={loading || isRecording}
-            title="Adjuntar imagen para analizar con visión"
-            className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 border border-slate-700 rounded-xl transition-colors flex items-center justify-center disabled:opacity-50"
+            title="Adjuntar imagen"
+            className="p-2 sm:p-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition-colors shrink-0 flex items-center justify-center disabled:opacity-50"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
             </svg>
           </button>
 
-          {/* Botón de Voz */}
+          {/* BOTÓN MICRÓFONO */}
           <button
             type="button"
             onMouseDown={startRecording}
@@ -422,18 +423,18 @@ export default function Home() {
             onTouchStart={startRecording}
             onTouchEnd={stopRecording}
             title="Mantén pulsado para hablar"
-            className={`p-3 rounded-xl transition-all duration-300 select-none touch-none flex items-center justify-center ${
+            className={`p-2 sm:p-3 rounded-xl transition-all select-none touch-none shrink-0 flex items-center justify-center ${
               isRecording 
-                ? 'bg-red-600 text-white scale-105 shadow-red-500/50 shadow-lg animate-pulse' 
+                ? 'bg-red-600 text-white scale-105 shadow-red-500/50 shadow-md animate-pulse' 
                 : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700'
             }`}
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
             </svg>
           </button>
 
-          {/* Input Texto */}
+          {/* CAMPO DE TEXTO (min-w-0 evita que empuje elementos fuera) */}
           <input
             type="text"
             value={input}
@@ -443,19 +444,22 @@ export default function Home() {
               isRecording 
                 ? 'Escuchando...' 
                 : selectedImage 
-                ? 'Pregunta algo sobre la imagen adjunta...' 
-                : 'Haz una pregunta o consulta sobre tus documentos...'
+                ? 'Pregunta sobre la imagen...' 
+                : 'Escribe un mensaje...'
             }
-            className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-60"
+            className="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-60"
           />
 
-          {/* Botón Enviar */}
+          {/* BOTÓN ENVIAR */}
           <button
             type="submit"
             disabled={loading || (!input.trim() && !selectedImage) || isRecording}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-xl text-sm font-semibold transition-all shadow-lg disabled:opacity-40"
+            className="bg-blue-600 hover:bg-blue-500 text-white px-3 sm:px-5 py-2 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-md disabled:opacity-40 shrink-0 flex items-center justify-center gap-1"
           >
-            Enviar
+            <span className="hidden sm:inline">Enviar</span>
+            <svg className="w-4 h-4 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
           </button>
         </form>
       </footer>
