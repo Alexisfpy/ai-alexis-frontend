@@ -23,12 +23,17 @@ export default function Home() {
   const [uploadStatus, setUploadStatus] = useState('');
   const [isRecording, setIsRecording] = useState(false);
 
+  // Estados para Visión Multimodal (Imágenes)
+  const [selectedImage, setSelectedImage] = useState(null); // Base64 puro
+  const [imagePreview, setImagePreview] = useState(null);   // URL temporal local
+
   // --- REFS ---
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const imageInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
-  const recordingStartTimeRef = useRef(0);
+const recordingStartTimeRef = useRef(0);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://ai-alexis-backend.onrender.com/api/v1';
 
@@ -39,7 +44,7 @@ export default function Home() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, loading]);
+  }, [messages, loading, imagePreview]);
 
   // --- CARGAR HISTORIAL DE MONGO ATLAS AL INICIAR SESIÓN ---
   useEffect(() => {
@@ -71,15 +76,49 @@ export default function Home() {
     cargarHistorial();
   }, [isSignedIn, user]);
 
-  // --- 1. ENVIAR MENSAJE DE TEXTO ---
+  // --- CONTROLADOR DE SELECCIÓN DE IMAGEN ---
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setImagePreview(URL.createObjectURL(file));
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64Data = reader.result.split(',')[1];
+      setSelectedImage(base64Data);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  // --- 1. ENVIAR MENSAJE DE TEXTO E IMAGEN ---
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    if ((!input.trim() && !selectedImage) || loading) return;
 
     const userMessage = input.trim();
+    const imageToSend = selectedImage;
+    const currentPreview = imagePreview;
+
+    // Resetear formulario
     setInput('');
+    handleRemoveImage();
     
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+    // Insertar mensaje del usuario en la interfaz
+    setMessages((prev) => [
+      ...prev, 
+      { 
+        role: 'user', 
+        content: userMessage || '📸 [Análisis de imagen]',
+        image: currentPreview 
+      }
+    ]);
     setLoading(true);
 
     try {
@@ -88,7 +127,8 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage,
-          user_id: userId
+          user_id: userId,
+          image: imageToSend
         })
       });
 
@@ -300,6 +340,13 @@ export default function Home() {
                   : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
               }`}
             >
+              {msg.image && (
+                <img
+                  src={msg.image}
+                  alt="Adjunto"
+                  className="max-w-[220px] max-h-[160px] rounded-lg mb-2 object-cover border border-blue-400/30"
+                />
+              )}
               {msg.content}
             </div>
             {msg.intent && (
@@ -323,9 +370,52 @@ export default function Home() {
         <div ref={messagesEndRef} />
       </main>
 
-      {/* BARRA DE ENTRADA (TEXTO Y MICRÓFONO) */}
+      {/* BARRA DE ENTRADA (TEXTO, IMAGEN Y MICRÓFONO) */}
       <footer className="p-4 bg-slate-900/80 border-t border-slate-800 backdrop-blur-md">
+        {/* Previsualización flotante de la imagen cargada */}
+        {imagePreview && (
+          <div className="max-w-4xl mx-auto mb-3 flex items-center gap-3 bg-slate-950/60 p-2 rounded-xl border border-slate-800 w-fit">
+            <div className="relative">
+              <img
+                src={imagePreview}
+                alt="Vista previa"
+                className="w-12 h-12 object-cover rounded-lg border border-cyan-500/60 shadow-md"
+              />
+              <button
+                type="button"
+                onClick={handleRemoveImage}
+                className="absolute -top-1.5 -right-1.5 bg-red-600 hover:bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] shadow"
+              >
+                ✕
+              </button>
+            </div>
+            <span className="text-xs text-slate-300 pr-2">Imagen adjunta lista para analizar</span>
+          </div>
+        )}
+
         <form onSubmit={handleSend} className="max-w-4xl mx-auto flex items-center gap-2">
+          {/* Input Oculto de Imagen */}
+          <input
+            type="file"
+            ref={imageInputRef}
+            onChange={handleImageSelect}
+            accept="image/*"
+            className="hidden"
+          />
+
+          {/* Botón Adjuntar Imagen (Clip) */}
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={loading || isRecording}
+            title="Adjuntar imagen para analizar con visión"
+            className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 border border-slate-700 rounded-xl transition-colors flex items-center justify-center disabled:opacity-50"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+          </button>
+
           {/* Botón de Voz */}
           <button
             type="button"
@@ -351,14 +441,20 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isRecording}
-            placeholder={isRecording ? 'Escuchando...' : 'Escribe un mensaje o pregunta por el clima...'}
+            placeholder={
+              isRecording 
+                ? 'Escuchando...' 
+                : selectedImage 
+                ? 'Pregunta algo sobre la imagen adjunta...' 
+                : 'Escribe un mensaje o pregunta por el clima...'
+            }
             className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-60"
           />
 
           {/* Botón Enviar */}
           <button
             type="submit"
-            disabled={loading || !input.trim() || isRecording}
+            disabled={loading || (!input.trim() && !selectedImage) || isRecording}
             className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-xl text-sm font-semibold transition-all shadow-lg disabled:opacity-40"
           >
             Enviar
