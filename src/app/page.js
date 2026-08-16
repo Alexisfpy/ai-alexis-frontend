@@ -74,17 +74,41 @@ export default function Home() {
     cargarHistorial();
   }, [isSignedIn, user]);
 
-  // --- CONTROLADOR DE SELECCIÓN DE IMAGEN ---
+  // --- CONTROLADOR DE SELECCIÓN Y COMPRESIÓN DE IMAGEN ---
   const handleImageSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    setImagePreview(URL.createObjectURL(file));
-
     const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64Data = reader.result.split(',')[1];
-      setSelectedImage(base64Data);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        // Redimensionar si supera los 1000px manteniendo la proporción
+        const maxDim = 1000;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Convertir a JPEG comprimido (calidad 70%)
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        setImagePreview(compressedDataUrl);
+        setSelectedImage(compressedDataUrl.split(',')[1]); // Base64 puro
+      };
     };
     reader.readAsDataURL(file);
   };
