@@ -7,15 +7,13 @@ import ReactMarkdown from 'react-markdown';
 export default function Home() {
   // --- AUTENTICACIÓN CON CLERK ---
   const { user, isLoaded, isSignedIn } = useUser();
-
-  // Si el usuario inició sesión, usa su ID único de Clerk; si no, usa usuario invitado
   const userId = user?.id || 'guest_user';
 
   // --- ESTADOS DE LA APLICACIÓN ---
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: '¡Hola! Soy AI Alexis. Todos los sistemas están en línea. Inicia sesión para personalizar tu experiencia.'
+      content: '¡Hola! Soy AI Alexis. Todos los sistemas están en línea. Puedes chatear, subir documentos para RAG o enviar notas de voz.'
     }
   ]);
   const [input, setInput] = useState('');
@@ -25,8 +23,8 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
 
   // Estados para Visión Multimodal (Imágenes)
-  const [selectedImage, setSelectedImage] = useState(null); // Base64 puro
-  const [imagePreview, setImagePreview] = useState(null);   // URL temporal local
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
 
   // --- REFS ---
   const messagesEndRef = useRef(null);
@@ -38,7 +36,6 @@ export default function Home() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://ai-alexis-backend.onrender.com/api/v1';
 
-  // Auto-scroll al final del chat al recibir mensajes
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -47,7 +44,7 @@ export default function Home() {
     scrollToBottom();
   }, [messages, loading, imagePreview]);
 
-  // --- CARGAR HISTORIAL DE MONGO ATLAS AL INICIAR SESIÓN ---
+  // --- CARGAR HISTORIAL DE MONGO ATLAS ---
   useEffect(() => {
     const cargarHistorial = async () => {
       if (!isSignedIn || !user) return;
@@ -107,17 +104,15 @@ export default function Home() {
     const imageToSend = selectedImage;
     const currentPreview = imagePreview;
 
-    // Resetear formulario
     setInput('');
     handleRemoveImage();
-    
-    // Insertar mensaje del usuario en la interfaz
+
     setMessages((prev) => [
-      ...prev, 
-      { 
-        role: 'user', 
+      ...prev,
+      {
+        role: 'user',
         content: userMessage || '📸 [Análisis de imagen]',
-        image: currentPreview 
+        image: currentPreview
       }
     ]);
     setLoading(true);
@@ -154,46 +149,42 @@ export default function Home() {
     }
   };
 
-  // --- 2. SUBIR PDF / CV ---
+  // --- 2. SUBIR DOCUMENTO A BASE DE CONOCIMIENTO (RAG) ---
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      alert('Por favor, selecciona un archivo PDF.');
-      return;
-    }
-
     setUploading(true);
-    setUploadStatus('Subiendo CV...');
+    setUploadStatus('Indexando documento...');
 
     const formData = new FormData();
     formData.append('file', file);
     formData.append('user_id', userId);
 
     try {
-      const response = await fetch(`${API_URL}/assistant/upload-cv`, {
+      const response = await fetch(`${API_URL}/assistant/upload-document`, {
         method: 'POST',
         body: formData
       });
 
-      if (!response.ok) throw new Error('Error al subir el CV');
+      if (!response.ok) throw new Error('Error al indexar el documento');
 
       const data = await response.json();
-      setUploadStatus('✅ CV guardado');
-      
+      setUploadStatus('✅ Indexado');
+
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: `📄 **Nuevo CV indexado**: Archivo *${data.filename}* guardado para tu usuario.`
+          content: `📚 **Documento indexado con éxito**: *${data.filename}* (${data.chunks_indexed || 0} fragmentos vectoriales listos para consulta semántica).`
         }
       ]);
     } catch (error) {
-      setUploadStatus('❌ Error al subir');
-      alert('Ocurrió un error al subir el PDF.');
+      setUploadStatus('❌ Error al indexar');
+      alert('Ocurrió un error al subir el documento.');
     } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       setTimeout(() => setUploadStatus(''), 4000);
     }
   };
@@ -202,7 +193,7 @@ export default function Home() {
   const startRecording = async (e) => {
     if (e) e.preventDefault();
     audioChunksRef.current = [];
-    
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
@@ -218,14 +209,14 @@ export default function Home() {
       mediaRecorder.onstop = async () => {
         const duration = Date.now() - recordingStartTimeRef.current;
         if (duration < 500) {
-          stream.getTracks().forEach(track => track.stop());
+          stream.getTracks().forEach((track) => track.stop());
           setIsRecording(false);
           return;
         }
 
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         await enviarAudioAlBackend(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((track) => track.stop());
       };
 
       mediaRecorder.start();
@@ -252,16 +243,16 @@ export default function Home() {
     try {
       const response = await fetch(`${API_URL}/assistant/voice`, {
         method: 'POST',
-        body: formData,
+        body: formData
       });
-      
+
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Error en el servidor de voz.');
-      
+
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response, intent: data.intent }]);
     } catch (error) {
       setMessages((prev) => [
-        ...prev, 
+        ...prev,
         { role: 'assistant', content: `💥 Error de voz: ${error.message}`, intent: 'ERROR' }
       ]);
     } finally {
@@ -289,17 +280,17 @@ export default function Home() {
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
-            accept=".pdf"
+            accept=".pdf,.txt"
             className="hidden"
           />
-          
+
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || !isSignedIn}
-            title={!isSignedIn ? 'Inicia sesión para subir tu CV' : 'Subir nuevo CV'}
+            title={!isSignedIn ? 'Inicia sesión para indexar documentos' : 'Subir documento a tu Base de Conocimiento'}
             className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium transition-all shadow-md disabled:opacity-50 flex items-center gap-1.5"
           >
-            📄 {uploading ? 'Cargando...' : 'Subir CV'}
+            📚 {uploading ? 'Indexando...' : 'Subir Documento (RAG)'}
           </button>
 
           {uploadStatus && (
@@ -348,8 +339,7 @@ export default function Home() {
                   className="max-w-[220px] max-h-[160px] rounded-lg mb-2 object-cover border border-blue-400/30"
                 />
               )}
-              
-              {/* RENDERIZADO CONDICIONAL: MARKDOWN PARA ASISTENTE / TEXTO DIRECTO PARA USUARIO */}
+
               {msg.role === 'user' ? (
                 msg.content
               ) : (
@@ -381,7 +371,6 @@ export default function Home() {
 
       {/* BARRA DE ENTRADA (TEXTO, IMAGEN Y MICRÓFONO) */}
       <footer className="p-4 bg-slate-900/80 border-t border-slate-800 backdrop-blur-md">
-        {/* Previsualización flotante de la imagen cargada */}
         {imagePreview && (
           <div className="max-w-4xl mx-auto mb-3 flex items-center gap-3 bg-slate-950/60 p-2 rounded-xl border border-slate-800 w-fit">
             <div className="relative">
@@ -412,7 +401,7 @@ export default function Home() {
             className="hidden"
           />
 
-          {/* Botón Adjuntar Imagen (Clip) */}
+          {/* Botón Adjuntar Imagen */}
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
@@ -455,7 +444,7 @@ export default function Home() {
                 ? 'Escuchando...' 
                 : selectedImage 
                 ? 'Pregunta algo sobre la imagen adjunta...' 
-                : 'Escribe un mensaje o pregunta por el clima...'
+                : 'Haz una pregunta o consulta sobre tus documentos...'
             }
             className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-60"
           />
