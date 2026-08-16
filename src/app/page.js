@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useUser, SignInButton, UserButton } from '@clerk/nextjs';
+import ReactMarkdown from 'react-markdown';
 
 export default function Home() {
   // --- AUTENTICACIÓN CON CLERK ---
@@ -33,7 +34,7 @@ export default function Home() {
   const imageInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
-const recordingStartTimeRef = useRef(0);
+  const recordingStartTimeRef = useRef(0);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://ai-alexis-backend.onrender.com/api/v1';
 
@@ -64,7 +65,7 @@ const recordingStartTimeRef = useRef(0);
           setMessages([
             {
               role: 'assistant',
-              content: `¡Bienvenido de nuevo, ${nombreUsuario}! Tu sesión está iniciada de forma segura. ¿En qué te puedo ayudar hoy?`
+              content: `¡Bienvenido de nuevo, **${nombreUsuario}**! Tu sesión está iniciada de forma segura. ¿En qué te puedo ayudar hoy?`
             }
           ]);
         }
@@ -332,9 +333,9 @@ const recordingStartTimeRef = useRef(0);
             className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
           >
             <div
-              className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap shadow-sm ${
+              className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
                 msg.role === 'user'
-                  ? 'bg-blue-600 text-white rounded-br-none'
+                  ? 'bg-blue-600 text-white rounded-br-none whitespace-pre-wrap'
                   : msg.intent === 'ERROR'
                   ? 'bg-red-950/80 border border-red-900 text-red-200 rounded-bl-none'
                   : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
@@ -347,7 +348,15 @@ const recordingStartTimeRef = useRef(0);
                   className="max-w-[220px] max-h-[160px] rounded-lg mb-2 object-cover border border-blue-400/30"
                 />
               )}
-              {msg.content}
+              
+              {/* RENDERIZADO CONDICIONAL: MARKDOWN PARA ASISTENTE / TEXTO DIRECTO PARA USUARIO */}
+              {msg.role === 'user' ? (
+                msg.content
+              ) : (
+                <div className="space-y-2 [&>ul]:list-disc [&>ul]:ml-4 [&>ol]:list-decimal [&>ol]:ml-4 [&>p]:leading-relaxed [&>pre]:bg-slate-950 [&>pre]:p-3 [&>pre]:rounded-lg [&>pre]:overflow-x-auto [&>code]:bg-slate-800 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
+              )}
             </div>
             {msg.intent && (
               <span className="text-[10px] text-slate-500 mt-1 px-1 font-mono uppercase">
