@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useUser, SignInButton, UserButton } from '@clerk/nextjs';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm'; // Importación obligatoria para tablas y GFM
 
 export default function Home() {
   // --- AUTENTICACIÓN CON CLERK ---
@@ -84,7 +85,6 @@ export default function Home() {
       const img = new Image();
       img.src = event.target.result;
       img.onload = () => {
-        // Redimensionar si supera los 1000px manteniendo la proporción
         const maxDim = 1000;
         let width = img.width;
         let height = img.height;
@@ -104,10 +104,9 @@ export default function Home() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Convertir a JPEG comprimido (calidad 70%)
         const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
         setImagePreview(compressedDataUrl);
-        setSelectedImage(compressedDataUrl.split(',')[1]); // Base64 puro
+        setSelectedImage(compressedDataUrl.split(',')[1]);
       };
     };
     reader.readAsDataURL(file);
@@ -286,7 +285,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-[100dvh] w-full max-w-full overflow-x-hidden bg-slate-950 text-slate-100 font-sans">
-      {/* CABECERA (HEADER) RESPONSIVE */}
+      {/* CABECERA RESPONSIVE */}
       <header className="flex items-center justify-between px-3 sm:px-6 py-3 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md sticky top-0 z-10 w-full shrink-0">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
@@ -325,7 +324,7 @@ export default function Home() {
             </span>
           )}
 
-          {/* CLERK LOGIN / AVATAR */}
+          {/* CLERK LOGIN */}
           {isLoaded && (
             <div className="shrink-0 flex items-center">
               {!isSignedIn ? (
@@ -350,7 +349,7 @@ export default function Home() {
             className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} w-full`}
           >
             <div
-              className={`max-w-[88%] sm:max-w-[75%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed shadow-sm break-words ${
+              className={`max-w-[92%] sm:max-w-[80%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed shadow-sm break-words ${
                 msg.role === 'user'
                   ? 'bg-blue-600 text-white rounded-br-none whitespace-pre-wrap'
                   : msg.intent === 'ERROR'
@@ -369,8 +368,10 @@ export default function Home() {
               {msg.role === 'user' ? (
                 msg.content
               ) : (
-                <div className="space-y-2 [&>ul]:list-disc [&>ul]:ml-4 [&>ol]:list-decimal [&>ol]:ml-4 [&>p]:leading-relaxed [&>pre]:bg-slate-950 [&>pre]:p-3 [&>pre]:rounded-lg [&>pre]:overflow-x-auto [&>code]:bg-slate-800 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                <div className="space-y-2 [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:ml-4 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:ml-4 [&>ol]:space-y-1 [&>pre]:bg-slate-950 [&>pre]:p-3 [&>pre]:rounded-lg [&>pre]:overflow-x-auto [&>code]:bg-slate-800 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>table]:w-full [&>table]:my-2 [&>table]:border-collapse [&>table]:text-xs [&>table]:overflow-x-auto [&>table]:block [&>thead]:bg-slate-800/80 [&>th]:border [&>th]:border-slate-700 [&>th]:p-2 [&>th]:text-left [&>th]:font-semibold [&>td]:border [&>td]:border-slate-800 [&>td]:p-2">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {msg.content}
+                  </ReactMarkdown>
                 </div>
               )}
             </div>
@@ -458,7 +459,7 @@ export default function Home() {
             </svg>
           </button>
 
-          {/* CAMPO DE TEXTO (min-w-0 evita que empuje elementos fuera) */}
+          {/* CAMPO DE TEXTO */}
           <input
             type="text"
             value={input}
