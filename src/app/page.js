@@ -34,7 +34,9 @@ export default function Home() {
 
   // Estados para Text-to-Speech (TTS)
   const [reproduciendoIndex, setReproduciendoIndex] = useState(null);
+  const [audioLoadingIndex, setAudioLoadingIndex] = useState(null);
   const currentAudioRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   // --- REFS ---
   const messagesEndRef = useRef(null);
@@ -78,18 +80,83 @@ export default function Home() {
     cargarConversaciones();
   }, [isSignedIn, user]);
 
-  // --- 2. SELECCIONAR O CAMBIAR DE CHAT ---
+  // --- 2. CONTROLADOR DE AUDIO TTS ---
+  const detenerAudio = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current.src = '';
+      currentAudioRef.current = null;
+    }
+    setReproduciendoIndex(null);
+    setAudioLoadingIndex(null);
+  };
+
+  const reproducirAudioTexto = async (texto, index = null) => {
+    // Si se pulsa el botón del mensaje activo o en carga, se detiene
+    if (reproduciendoIndex === index || (audioLoadingIndex === index && index !== null)) {
+      detenerAudio();
+      return;
+    }
+
+    detenerAudio();
+
+    if (index !== null) {
+      setAudioLoadingIndex(index);
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const res = await fetch(`${API_URL}/assistant/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: texto }),
+        signal: controller.signal
+      });
+
+      if (!res.ok) throw new Error('Error al sintetizar voz');
+
+      const blob = await res.blob();
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      currentAudioRef.current = audio;
+
+      audio.onended = () => {
+        detenerAudio();
+      };
+
+      audio.onerror = () => {
+        detenerAudio();
+      };
+
+      setAudioLoadingIndex(null);
+      if (index !== null) {
+        setReproduciendoIndex(index);
+      }
+
+      await audio.play();
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Error al reproducir audio:', error);
+      }
+      detenerAudio();
+    }
+  };
+
+  // --- 3. SELECCIONAR O CAMBIAR DE CHAT ---
   const seleccionarConversacion = async (convId) => {
     if (convId === currentConversationId) {
       setSidebarOpen(false);
       return;
     }
 
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      setReproduciendoIndex(null);
-    }
-
+    detenerAudio();
     setCurrentConversationId(convId);
     setSidebarOpen(false);
     setLoading(true);
@@ -113,13 +180,9 @@ export default function Home() {
     }
   };
 
-  // --- 3. CREAR NUEVO CHAT ---
+  // --- 4. CREAR NUEVO CHAT ---
   const crearNuevoChat = () => {
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      setReproduciendoIndex(null);
-    }
-
+    detenerAudio();
     setCurrentConversationId(null);
     const nombre = user?.firstName || user?.username || 'Alexis';
     setMessages([
@@ -131,7 +194,7 @@ export default function Home() {
     setSidebarOpen(false);
   };
 
-  // --- 4. ELIMINAR CONVERSACIÓN ---
+  // --- 5. ELIMINAR CONVERSACIÓN ---
   const eliminarConversacion = async (e, convId) => {
     e.stopPropagation();
     if (!confirm('¿Deseas eliminar esta conversación?')) return;
@@ -149,45 +212,6 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error al eliminar conversación:', error);
-    }
-  };
-
-  // --- 5. CONTROLADOR DE SÍNTESIS DE VOZ (TTS) ---
-  const reproducirAudioTexto = async (texto, index = null) => {
-    if (reproduciendoIndex === index && currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      setReproduciendoIndex(null);
-      return;
-    }
-
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-    }
-
-    try {
-      if (index !== null) setReproduciendoIndex(index);
-
-      const res = await fetch(`${API_URL}/assistant/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: texto })
-      });
-
-      if (!res.ok) throw new Error('Error al sintetizar voz');
-
-      const blob = await res.blob();
-      const audioUrl = URL.createObjectURL(blob);
-      const audio = new Audio(audioUrl);
-      currentAudioRef.current = audio;
-
-      audio.onended = () => {
-        setReproduciendoIndex(null);
-      };
-
-      await audio.play();
-    } catch (error) {
-      console.error('Error al reproducir audio:', error);
-      setReproduciendoIndex(null);
     }
   };
 
@@ -337,6 +361,7 @@ export default function Home() {
   // --- NOTAS DE VOZ ---
   const startRecording = async (e) => {
     if (e) e.preventDefault();
+    detenerAudio();
     audioChunksRef.current = [];
 
     try {
@@ -401,8 +426,8 @@ export default function Home() {
       }
 
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response, intent: data.intent }]);
-      
-      // Auto-reproducir respuesta por voz
+
+      // Auto-reproducir respuesta por voz en notas de voz
       reproducirAudioTexto(data.response);
     } catch (error) {
       setMessages((prev) => [
@@ -475,7 +500,6 @@ export default function Home() {
                     <span className="truncate">{c.title || 'Conversación'}</span>
                   </div>
 
-                  {/* BOTÓN ELIMINAR CHAT */}
                   <button
                     onClick={(e) => eliminarConversacion(e, c.id)}
                     title="Eliminar conversación"
@@ -591,20 +615,40 @@ export default function Home() {
                       </ReactMarkdown>
                     </div>
 
-                    {/* BOTÓN DE ALTAVOZ / REPRODUCIR VOZ */}
+                    {/* BOTÓN DE ALTAVOZ / ESTADO DE AUDIO */}
                     <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800/60">
                       <button
-                        onClick={() => reproducirAudioTexto(msg.content, index)}
-                        title="Escuchar mensaje"
-                        className={`text-xs flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors ${
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          reproducirAudioTexto(msg.content, index);
+                        }}
+                        title={
+                          reproduciendoIndex === index || audioLoadingIndex === index
+                            ? 'Detener audio'
+                            : 'Escuchar mensaje'
+                        }
+                        className={`text-xs flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors select-none ${
                           reproduciendoIndex === index
-                            ? 'text-cyan-400 bg-cyan-950/60 border border-cyan-500/40 animate-pulse'
+                            ? 'text-cyan-400 bg-cyan-950/70 border border-cyan-500/40 animate-pulse'
+                            : audioLoadingIndex === index
+                            ? 'text-amber-400 bg-amber-950/50 border border-amber-500/40'
                             : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                         }`}
                       >
-                        <span>{reproduciendoIndex === index ? '⏹️' : '🔊'}</span>
+                        <span>
+                          {audioLoadingIndex === index
+                            ? '⏳'
+                            : reproduciendoIndex === index
+                            ? '⏹️'
+                            : '🔊'}
+                        </span>
                         <span className="text-[11px]">
-                          {reproduciendoIndex === index ? 'Detener' : 'Escuchar'}
+                          {audioLoadingIndex === index
+                            ? 'Cargando...'
+                            : reproduciendoIndex === index
+                            ? 'Detener'
+                            : 'Escuchar'}
                         </span>
                       </button>
                     </div>
