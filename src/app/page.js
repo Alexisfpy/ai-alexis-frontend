@@ -32,6 +32,10 @@ export default function Home() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
+  // Estados para Text-to-Speech (TTS)
+  const [reproduciendoIndex, setReproduciendoIndex] = useState(null);
+  const currentAudioRef = useRef(null);
+
   // --- REFS ---
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -62,7 +66,6 @@ export default function Home() {
       const lista = data.conversations || [];
       setConversations(lista);
 
-      // Si no hay chat activo y existen chats previos, cargamos el primero automáticamente
       if (!currentConversationId && lista.length > 0) {
         seleccionarConversacion(lista[0].id);
       }
@@ -80,6 +83,11 @@ export default function Home() {
     if (convId === currentConversationId) {
       setSidebarOpen(false);
       return;
+    }
+
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      setReproduciendoIndex(null);
     }
 
     setCurrentConversationId(convId);
@@ -107,6 +115,11 @@ export default function Home() {
 
   // --- 3. CREAR NUEVO CHAT ---
   const crearNuevoChat = () => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      setReproduciendoIndex(null);
+    }
+
     setCurrentConversationId(null);
     const nombre = user?.firstName || user?.username || 'Alexis';
     setMessages([
@@ -136,6 +149,45 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error al eliminar conversación:', error);
+    }
+  };
+
+  // --- 5. CONTROLADOR DE SÍNTESIS DE VOZ (TTS) ---
+  const reproducirAudioTexto = async (texto, index = null) => {
+    if (reproduciendoIndex === index && currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      setReproduciendoIndex(null);
+      return;
+    }
+
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+    }
+
+    try {
+      if (index !== null) setReproduciendoIndex(index);
+
+      const res = await fetch(`${API_URL}/assistant/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: texto })
+      });
+
+      if (!res.ok) throw new Error('Error al sintetizar voz');
+
+      const blob = await res.blob();
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      currentAudioRef.current = audio;
+
+      audio.onended = () => {
+        setReproduciendoIndex(null);
+      };
+
+      await audio.play();
+    } catch (error) {
+      console.error('Error al reproducir audio:', error);
+      setReproduciendoIndex(null);
     }
   };
 
@@ -220,7 +272,6 @@ export default function Home() {
 
       const data = await response.json();
 
-      // Si se generó un nuevo chat en el backend, actualizamos el ID y la lista
       if (!currentConversationId && data.conversation_id) {
         setCurrentConversationId(data.conversation_id);
         cargarConversaciones();
@@ -350,6 +401,9 @@ export default function Home() {
       }
 
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response, intent: data.intent }]);
+      
+      // Auto-reproducir respuesta por voz
+      reproducirAudioTexto(data.response);
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -362,7 +416,7 @@ export default function Home() {
 
   return (
     <div className="flex h-[100dvh] w-full max-w-full overflow-hidden bg-slate-950 text-slate-100 font-sans">
-      {/* FONDO OSCURO PARA MÓVILES CUANDO EL SIDEBAR ESTÁ ABIERTO */}
+      {/* FONDO OSCURO PARA MÓVILES */}
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -450,7 +504,6 @@ export default function Home() {
         {/* CABECERA */}
         <header className="flex items-center justify-between px-3 sm:px-6 py-3 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md sticky top-0 z-10 w-full shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            {/* BOTÓN TOGGLE SIDEBAR EN MÓVILES */}
             <button
               onClick={() => setSidebarOpen(true)}
               className="md:hidden p-1.5 bg-slate-800 text-slate-300 rounded-lg border border-slate-700 hover:text-white"
@@ -531,11 +584,31 @@ export default function Home() {
                 {msg.role === 'user' ? (
                   msg.content
                 ) : (
-                  <div className="space-y-2 [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:ml-4 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:ml-4 [&>ol]:space-y-1 [&>pre]:bg-slate-950 [&>pre]:p-3 [&>pre]:rounded-lg [&>pre]:overflow-x-auto [&>code]:bg-slate-800 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>table]:w-full [&>table]:my-2 [&>table]:border-collapse [&>table]:text-xs [&>table]:overflow-x-auto [&>table]:block [&>thead]:bg-slate-800/80 [&>th]:border [&>th]:border-slate-700 [&>th]:p-2 [&>th]:text-left [&>th]:font-semibold [&>td]:border [&>td]:border-slate-800 [&>td]:p-2">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {msg.content}
-                    </ReactMarkdown>
-                  </div>
+                  <>
+                    <div className="space-y-2 [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:ml-4 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:ml-4 [&>ol]:space-y-1 [&>pre]:bg-slate-950 [&>pre]:p-3 [&>pre]:rounded-lg [&>pre]:overflow-x-auto [&>code]:bg-slate-800 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>table]:w-full [&>table]:my-2 [&>table]:border-collapse [&>table]:text-xs [&>table]:overflow-x-auto [&>table]:block [&>thead]:bg-slate-800/80 [&>th]:border [&>th]:border-slate-700 [&>th]:p-2 [&>th]:text-left [&>th]:font-semibold [&>td]:border [&>td]:border-slate-800 [&>td]:p-2">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+
+                    {/* BOTÓN DE ALTAVOZ / REPRODUCIR VOZ */}
+                    <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800/60">
+                      <button
+                        onClick={() => reproducirAudioTexto(msg.content, index)}
+                        title="Escuchar mensaje"
+                        className={`text-xs flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors ${
+                          reproduciendoIndex === index
+                            ? 'text-cyan-400 bg-cyan-950/60 border border-cyan-500/40 animate-pulse'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>{reproduciendoIndex === index ? '⏹️' : '🔊'}</span>
+                        <span className="text-[11px]">
+                          {reproduciendoIndex === index ? 'Detener' : 'Escuchar'}
+                        </span>
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
               {msg.intent && (
