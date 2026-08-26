@@ -97,7 +97,6 @@ export default function Home() {
   };
 
   const reproducirAudioTexto = async (texto, index = null) => {
-    // Si se pulsa el botón del mensaje activo o en carga, se detiene
     if (reproduciendoIndex === index || (audioLoadingIndex === index && index !== null)) {
       detenerAudio();
       return;
@@ -258,10 +257,12 @@ export default function Home() {
     if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
-  // --- ENVIAR MENSAJE DE TEXTO E IMAGEN ---
+  // --- 6. ENVIAR MENSAJE CON STREAMING EN TIEMPO REAL (SSE) ---
   const handleSend = async (e) => {
     e.preventDefault();
     if ((!input.trim() && !selectedImage) || loading) return;
+
+    detenerAudio();
 
     const userMessage = input.trim();
     const imageToSend = selectedImage;
@@ -270,18 +271,24 @@ export default function Home() {
     setInput('');
     handleRemoveImage();
 
+    // 1. Agregar mensaje del usuario y crear placeholder del asistente
     setMessages((prev) => [
       ...prev,
       {
         role: 'user',
         content: userMessage || '📸 [Análisis de imagen]',
         image: currentPreview
+      },
+      {
+        role: 'assistant',
+        content: '',
+        intent: ''
       }
     ]);
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/assistant/chat`, {
+      const response = await fetch(`${API_URL}/assistant/chat-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -292,27 +299,68 @@ export default function Home() {
         })
       });
 
-      if (!response.ok) throw new Error('Error al conectar con el servidor');
+      if (!response.ok) throw new Error('Error al conectar con el servidor en streaming');
 
-      const data = await response.json();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
 
-      if (!currentConversationId && data.conversation_id) {
-        setCurrentConversationId(data.conversation_id);
-        cargarConversaciones();
-      }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: data.response, intent: data.intent }
-      ]);
-    } catch (error) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: '⚠️ No se pudo conectar con el backend. Comprueba la red o vuelve a intentarlo.'
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop(); // Guarda fragmentos incompletos para el siguiente chunk
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const rawData = line.replace('data: ', '').trim();
+            if (rawData === '[DONE]') continue;
+
+            try {
+              const data = JSON.parse(rawData);
+
+              // Si es una conversación nueva, vincular el conversation_id y recargar sidebar
+              if (data.conversation_id && !currentConversationId) {
+                setCurrentConversationId(data.conversation_id);
+                cargarConversaciones();
+              }
+
+              // Concatenar el token al último mensaje del asistente
+              setMessages((prev) => {
+                const updated = [...prev];
+                const lastIndex = updated.length - 1;
+                const lastMsg = updated[lastIndex];
+
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  updated[lastIndex] = {
+                    ...lastMsg,
+                    content: lastMsg.content + (data.token || ''),
+                    intent: data.intent || lastMsg.intent
+                  };
+                }
+                return updated;
+              });
+            } catch (err) {
+              console.error('Error parseando fragmento SSE:', err);
+            }
+          }
         }
-      ]);
+      }
+    } catch (error) {
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastIndex = updated.length - 1;
+        if (updated[lastIndex]?.role === 'assistant') {
+          updated[lastIndex] = {
+            role: 'assistant',
+            content: '⚠️ No se pudo conectar con el backend. Comprueba la red o vuelve a intentarlo.',
+            intent: 'ERROR'
+          };
+        }
+        return updated;
+      });
     } finally {
       setLoading(false);
     }
@@ -583,96 +631,98 @@ export default function Home() {
 
         {/* ZONA DE MENSAJES */}
         <main className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4 max-w-4xl w-full mx-auto min-w-0">
-          {messages.map((msg, index) => (
-            <div
-              key={index}
-              className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} w-full`}
-            >
+          {messages.map((msg, index) => {
+            const isLastMessage = index === messages.length - 1;
+            const isStreamingEmpty = msg.role === 'assistant' && msg.content === '' && loading && isLastMessage;
+
+            return (
               <div
-                className={`max-w-[92%] sm:max-w-[80%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed shadow-sm break-words ${
-                  msg.role === 'user'
-                    ? 'bg-blue-600 text-white rounded-br-none whitespace-pre-wrap'
-                    : msg.intent === 'ERROR'
-                    ? 'bg-red-950/80 border border-red-900 text-red-200 rounded-bl-none'
-                    : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
-                }`}
+                key={index}
+                className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} w-full`}
               >
-                {msg.image && (
-                  <img
-                    src={msg.image}
-                    alt="Adjunto"
-                    className="max-w-[180px] sm:max-w-[220px] max-h-[140px] sm:max-h-[160px] rounded-lg mb-2 object-cover border border-blue-400/30"
-                  />
-                )}
+                <div
+                  className={`max-w-[92%] sm:max-w-[80%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed shadow-sm break-words ${
+                    msg.role === 'user'
+                      ? 'bg-blue-600 text-white rounded-br-none whitespace-pre-wrap'
+                      : msg.intent === 'ERROR'
+                      ? 'bg-red-950/80 border border-red-900 text-red-200 rounded-bl-none'
+                      : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
+                  }`}
+                >
+                  {msg.image && (
+                    <img
+                      src={msg.image}
+                      alt="Adjunto"
+                      className="max-w-[180px] sm:max-w-[220px] max-h-[140px] sm:max-h-[160px] rounded-lg mb-2 object-cover border border-blue-400/30"
+                    />
+                  )}
 
-                {msg.role === 'user' ? (
-                  msg.content
-                ) : (
-                  <>
-                    <div className="space-y-2 [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:ml-4 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:ml-4 [&>ol]:space-y-1 [&>pre]:bg-slate-950 [&>pre]:p-3 [&>pre]:rounded-lg [&>pre]:overflow-x-auto [&>code]:bg-slate-800 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>table]:w-full [&>table]:my-2 [&>table]:border-collapse [&>table]:text-xs [&>table]:overflow-x-auto [&>table]:block [&>thead]:bg-slate-800/80 [&>th]:border [&>th]:border-slate-700 [&>th]:p-2 [&>th]:text-left [&>th]:font-semibold [&>td]:border [&>td]:border-slate-800 [&>td]:p-2">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content}
-                      </ReactMarkdown>
+                  {msg.role === 'user' ? (
+                    msg.content
+                  ) : isStreamingEmpty ? (
+                    <div className="flex items-center gap-1.5 py-1">
+                      <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" />
+                      <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+                      <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:0.4s]" />
                     </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2 [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:ml-4 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:ml-4 [&>ol]:space-y-1 [&>pre]:bg-slate-950 [&>pre]:p-3 [&>pre]:rounded-lg [&>pre]:overflow-x-auto [&>code]:bg-slate-800 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>table]:w-full [&>table]:my-2 [&>table]:border-collapse [&>table]:text-xs [&>table]:overflow-x-auto [&>table]:block [&>thead]:bg-slate-800/80 [&>th]:border [&>th]:border-slate-700 [&>th]:p-2 [&>th]:text-left [&>th]:font-semibold [&>td]:border [&>td]:border-slate-800 [&>td]:p-2">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
 
-                    {/* BOTÓN DE ALTAVOZ / ESTADO DE AUDIO */}
-                    <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800/60">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          reproducirAudioTexto(msg.content, index);
-                        }}
-                        title={
-                          reproduciendoIndex === index || audioLoadingIndex === index
-                            ? 'Detener audio'
-                            : 'Escuchar mensaje'
-                        }
-                        className={`text-xs flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors select-none ${
-                          reproduciendoIndex === index
-                            ? 'text-cyan-400 bg-cyan-950/70 border border-cyan-500/40 animate-pulse'
-                            : audioLoadingIndex === index
-                            ? 'text-amber-400 bg-amber-950/50 border border-amber-500/40'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                        }`}
-                      >
-                        <span>
-                          {audioLoadingIndex === index
-                            ? '⏳'
-                            : reproduciendoIndex === index
-                            ? '⏹️'
-                            : '🔊'}
-                        </span>
-                        <span className="text-[11px]">
-                          {audioLoadingIndex === index
-                            ? 'Cargando...'
-                            : reproduciendoIndex === index
-                            ? 'Detener'
-                            : 'Escuchar'}
-                        </span>
-                      </button>
-                    </div>
-                  </>
+                      {/* BOTÓN DE ALTAVOZ / ESTADO DE AUDIO */}
+                      {msg.content && (
+                        <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800/60">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              reproducirAudioTexto(msg.content, index);
+                            }}
+                            title={
+                              reproduciendoIndex === index || audioLoadingIndex === index
+                                ? 'Detener audio'
+                                : 'Escuchar mensaje'
+                            }
+                            className={`text-xs flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors select-none ${
+                              reproduciendoIndex === index
+                                ? 'text-cyan-400 bg-cyan-950/70 border border-cyan-500/40 animate-pulse'
+                                : audioLoadingIndex === index
+                                ? 'text-amber-400 bg-amber-950/50 border border-amber-500/40'
+                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                            }`}
+                          >
+                            <span>
+                              {audioLoadingIndex === index
+                                ? '⏳'
+                                : reproduciendoIndex === index
+                                ? '⏹️'
+                                : '🔊'}
+                            </span>
+                            <span className="text-[11px]">
+                              {audioLoadingIndex === index
+                                ? 'Cargando...'
+                                : reproduciendoIndex === index
+                                ? 'Detener'
+                                : 'Escuchar'}
+                            </span>
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                {msg.intent && (
+                  <span className="text-[9px] sm:text-[10px] text-slate-400 mt-1 px-1 font-mono uppercase">
+                    Intención: {msg.intent}
+                  </span>
                 )}
               </div>
-              {msg.intent && (
-                <span className="text-[9px] sm:text-[10px] text-slate-400 mt-1 px-1 font-mono uppercase">
-                  Intención: {msg.intent}
-                </span>
-              )}
-            </div>
-          ))}
-
-          {loading && (
-            <div className="flex items-center gap-2 text-slate-400 text-xs sm:text-sm bg-slate-900/50 border border-slate-800/80 w-fit px-3 py-2 rounded-2xl rounded-bl-none">
-              <div className="flex gap-1">
-                <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-cyan-400 rounded-full animate-bounce" />
-                <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:0.2s]" />
-                <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:0.4s]" />
-              </div>
-              <span>Procesando...</span>
-            </div>
-          )}
+            );
+          })}
           <div ref={messagesEndRef} />
         </main>
 
