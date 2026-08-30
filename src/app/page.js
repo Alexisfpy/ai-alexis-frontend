@@ -223,7 +223,9 @@ export default function Home() {
 
   const exportarPDF = () => {
     setExportMenuOpen(false);
-    window.print();
+    setTimeout(() => {
+      window.print();
+    }, 150);
   };
 
   // --- CONTROLADOR DE IMAGEN ---
@@ -336,8 +338,14 @@ export default function Home() {
                 setCurrentConversationId(data.conversation_id);
               }
 
+              // Actualización inmediata del título en el sidebar
               if (data.new_title) {
-                cargarConversaciones(searchTerm);
+                const targetId = data.conversation_id || currentConversationId;
+                setConversations((prev) =>
+                  prev.map((c) =>
+                    c.id === targetId ? { ...c, title: data.new_title } : c
+                  )
+                );
               }
 
               setMessages((prev) => {
@@ -468,6 +476,9 @@ export default function Home() {
     const formData = new FormData();
     formData.append('file', blob, 'voice_input.webm');
     formData.append('user_id', userId);
+    if (currentConversationId) {
+      formData.append('conversation_id', currentConversationId);
+    }
 
     try {
       const response = await fetch(`${API_URL}/assistant/voice`, {
@@ -478,8 +489,13 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Error en el servidor de voz.');
 
+      if (!currentConversationId && data.conversation_id) {
+        setCurrentConversationId(data.conversation_id);
+      }
+
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response, intent: data.intent }]);
       reproducirAudioTexto(data.response);
+      cargarConversaciones(searchTerm);
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -501,7 +517,7 @@ export default function Home() {
 
       {/* --- BARRA LATERAL (SIDEBAR) --- */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-30 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out ${
+        className={`fixed md:static inset-y-0 left-0 z-30 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out print:hidden ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
@@ -596,8 +612,8 @@ export default function Home() {
 
       {/* --- CONTENEDOR PRINCIPAL DEL CHAT --- */}
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
-        {/* CABECERA */}
-        <header className="flex items-center justify-between px-3 sm:px-6 py-3 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md sticky top-0 z-10 w-full shrink-0">
+        {/* CABECERA (OCULTA AL IMPRIMIR / PDF) */}
+        <header className="flex items-center justify-between px-3 sm:px-6 py-3 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md sticky top-0 z-10 w-full shrink-0 print:hidden">
           <div className="flex items-center gap-2.5 min-w-0">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -684,7 +700,7 @@ export default function Home() {
           </div>
         </header>
 
-        {/* ZONA DE MENSAJES CON RENDERIZADO MATEMÁTICO (KATEX) */}
+        {/* ZONA DE MENSAJES (RENDERIZADO KATEX) */}
         <main className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4 max-w-4xl w-full mx-auto min-w-0 print:p-0 print:max-w-full">
           {messages.map((msg, index) => {
             const isLastMessage = index === messages.length - 1;
@@ -784,7 +800,7 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </main>
 
-        {/* BARRA DE ENTRADA */}
+        {/* BARRA DE ENTRADA (OCULTA AL IMPRIMIR / PDF) */}
         <footer className="p-2.5 sm:p-4 bg-slate-900/90 border-t border-slate-800 backdrop-blur-md shrink-0 w-full print:hidden">
           {imagePreview && (
             <div className="max-w-4xl mx-auto mb-2 flex items-center gap-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800 w-fit">
