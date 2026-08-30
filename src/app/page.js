@@ -334,20 +334,39 @@ export default function Home() {
             try {
               const data = JSON.parse(rawData);
 
-              if (data.conversation_id && !currentConversationId) {
-                setCurrentConversationId(data.conversation_id);
+              // 1. Vincular el conversation_id e insertar en la lista lateral si es nueva
+              if (data.conversation_id) {
+                const activeId = data.conversation_id;
+                if (!currentConversationId) {
+                  setCurrentConversationId(activeId);
+                }
+
+                setConversations((prev) => {
+                  const existe = prev.some((c) => c.id === activeId);
+                  if (!existe) {
+                    return [
+                      {
+                        id: activeId,
+                        title: userMessage.slice(0, 28) + (userMessage.length > 28 ? '...' : ''),
+                        updated_at: new Date().toISOString()
+                      },
+                      ...prev
+                    ];
+                  }
+                  return prev;
+                });
               }
 
-              // Actualización inmediata del título en el sidebar
-              if (data.new_title) {
-                const targetId = data.conversation_id || currentConversationId;
+              // 2. Actualizar el título inteligente cuando el backend lo emita
+              if (data.new_title && data.conversation_id) {
                 setConversations((prev) =>
                   prev.map((c) =>
-                    c.id === targetId ? { ...c, title: data.new_title } : c
+                    c.id === data.conversation_id ? { ...c, title: data.new_title } : c
                   )
                 );
               }
 
+              // 3. Concatenar tokens del asistente
               setMessages((prev) => {
                 const updated = [...prev];
                 const lastIndex = updated.length - 1;
@@ -383,7 +402,6 @@ export default function Home() {
       });
     } finally {
       setLoading(false);
-      cargarConversaciones(searchTerm);
     }
   };
 
