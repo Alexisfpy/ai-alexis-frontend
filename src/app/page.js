@@ -271,7 +271,7 @@ export default function Home() {
     if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
-  // --- 7. ENVIAR MENSAJE CON STREAMING SSE Y AUTO-TITULADO ---
+  // --- 7. ENVIAR MENSAJE CON STREAMING SSE Y AUTO-TITULADO INMEDIATO ---
   const handleSend = async (e) => {
     e.preventDefault();
     if ((!input.trim() && !selectedImage) || loading) return;
@@ -334,9 +334,11 @@ export default function Home() {
             try {
               const data = JSON.parse(rawData);
 
-              // 1. Vincular el conversation_id e insertar en la lista lateral si es nueva
+              // 1. Asignar ID de conversación y fijar el título recibido de inmediato
               if (data.conversation_id) {
                 const activeId = data.conversation_id;
+                const activeTitle = data.title || userMessage.slice(0, 25);
+
                 if (!currentConversationId) {
                   setCurrentConversationId(activeId);
                 }
@@ -347,26 +349,21 @@ export default function Home() {
                     return [
                       {
                         id: activeId,
-                        title: userMessage.slice(0, 28) + (userMessage.length > 28 ? '...' : ''),
+                        title: activeTitle,
                         updated_at: new Date().toISOString()
                       },
                       ...prev
                     ];
+                  } else if (data.title) {
+                    return prev.map((c) =>
+                      c.id === activeId ? { ...c, title: data.title } : c
+                    );
                   }
                   return prev;
                 });
               }
 
-              // 2. Actualizar el título inteligente cuando el backend lo emita
-              if (data.new_title && data.conversation_id) {
-                setConversations((prev) =>
-                  prev.map((c) =>
-                    c.id === data.conversation_id ? { ...c, title: data.new_title } : c
-                  )
-                );
-              }
-
-              // 3. Concatenar tokens del asistente
+              // 2. Concatenar tokens del asistente
               setMessages((prev) => {
                 const updated = [...prev];
                 const lastIndex = updated.length - 1;
