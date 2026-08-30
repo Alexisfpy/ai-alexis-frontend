@@ -4,6 +4,9 @@ import { useState, useRef, useEffect } from 'react';
 import { useUser, SignInButton, UserButton } from '@clerk/nextjs';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 export default function Home() {
   // --- AUTENTICACIÓN CON CLERK ---
@@ -333,7 +336,6 @@ export default function Home() {
                 setCurrentConversationId(data.conversation_id);
               }
 
-              // Si el backend emite un nuevo título inteligente, actualizamos la lista
               if (data.new_title) {
                 cargarConversaciones(searchTerm);
               }
@@ -615,9 +617,8 @@ export default function Home() {
             </span>
           </div>
 
-          {/* ACCIONES DE CABECERA: RAG, EXPORTACIÓN Y USUARIO */}
+          {/* ACCIONES DE CABECERA */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* MENÚ DE EXPORTACIÓN */}
             {currentConversationId && (
               <div className="relative">
                 <button
@@ -683,7 +684,7 @@ export default function Home() {
           </div>
         </header>
 
-        {/* ZONA DE MENSAJES */}
+        {/* ZONA DE MENSAJES CON RENDERIZADO MATEMÁTICO (KATEX) */}
         <main className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4 max-w-4xl w-full mx-auto min-w-0 print:p-0 print:max-w-full">
           {messages.map((msg, index) => {
             const isLastMessage = index === messages.length - 1;
@@ -722,7 +723,10 @@ export default function Home() {
                   ) : (
                     <>
                       <div className="space-y-2 [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:ml-4 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:ml-4 [&>ol]:space-y-1 [&>pre]:bg-slate-950 [&>pre]:p-3 [&>pre]:rounded-lg [&>pre]:overflow-x-auto [&>code]:bg-slate-800 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>table]:w-full [&>table]:my-2 [&>table]:border-collapse [&>table]:text-xs [&>table]:overflow-x-auto [&>table]:block [&>thead]:bg-slate-800/80 [&>th]:border [&>th]:border-slate-700 [&>th]:p-2 [&>th]:text-left [&>th]:font-semibold [&>td]:border [&>td]:border-slate-800 [&>td]:p-2 print:text-black">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[rehypeKatex]}
+                        >
                           {msg.content}
                         </ReactMarkdown>
                       </div>
@@ -780,7 +784,7 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </main>
 
-        {/* BARRA DE ENTRADA (FOOTER) */}
+        {/* BARRA DE ENTRADA */}
         <footer className="p-2.5 sm:p-4 bg-slate-900/90 border-t border-slate-800 backdrop-blur-md shrink-0 w-full print:hidden">
           {imagePreview && (
             <div className="max-w-4xl mx-auto mb-2 flex items-center gap-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800 w-fit">
