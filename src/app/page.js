@@ -14,6 +14,7 @@ export default function Home() {
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // --- ESTADOS DEL CHAT ---
   const [messages, setMessages] = useState([
@@ -27,6 +28,7 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   // Estados para Visión Multimodal
   const [selectedImage, setSelectedImage] = useState(null);
@@ -56,29 +58,33 @@ export default function Home() {
     scrollToBottom();
   }, [messages, loading, imagePreview]);
 
-  // --- 1. CARGAR LISTA DE CONVERSACIONES ---
-  const cargarConversaciones = async () => {
+  // --- 1. CARGAR / BUSCAR CONVERSACIONES ---
+  const cargarConversaciones = async (busqueda = '') => {
     if (!isSignedIn || !user) return;
 
     try {
-      const res = await fetch(`${API_URL}/assistant/conversations/${user.id}`);
+      const url = busqueda.trim()
+        ? `${API_URL}/assistant/conversations/search/${user.id}?q=${encodeURIComponent(busqueda.trim())}`
+        : `${API_URL}/assistant/conversations/${user.id}`;
+
+      const res = await fetch(url);
       if (!res.ok) return;
 
       const data = await res.json();
       const lista = data.conversations || [];
       setConversations(lista);
 
-      if (!currentConversationId && lista.length > 0) {
+      if (!currentConversationId && lista.length > 0 && !busqueda.trim()) {
         seleccionarConversacion(lista[0].id);
       }
     } catch (error) {
-      console.error('Error al cargar la lista de conversaciones:', error);
+      console.error('Error al cargar conversaciones:', error);
     }
   };
 
   useEffect(() => {
-    cargarConversaciones();
-  }, [isSignedIn, user]);
+    cargarConversaciones(searchTerm);
+  }, [isSignedIn, user, searchTerm]);
 
   // --- 2. CONTROLADOR DE AUDIO TTS ---
   const detenerAudio = () => {
@@ -103,10 +109,7 @@ export default function Home() {
     }
 
     detenerAudio();
-
-    if (index !== null) {
-      setAudioLoadingIndex(index);
-    }
+    if (index !== null) setAudioLoadingIndex(index);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -126,29 +129,20 @@ export default function Home() {
       const audio = new Audio(audioUrl);
       currentAudioRef.current = audio;
 
-      audio.onended = () => {
-        detenerAudio();
-      };
-
-      audio.onerror = () => {
-        detenerAudio();
-      };
+      audio.onended = () => detenerAudio();
+      audio.onerror = () => detenerAudio();
 
       setAudioLoadingIndex(null);
-      if (index !== null) {
-        setReproduciendoIndex(index);
-      }
+      if (index !== null) setReproduciendoIndex(index);
 
       await audio.play();
     } catch (error) {
-      if (error.name !== 'AbortError') {
-        console.error('Error al reproducir audio:', error);
-      }
+      if (error.name !== 'AbortError') console.error('Error al reproducir audio:', error);
       detenerAudio();
     }
   };
 
-  // --- 3. SELECCIONAR O CAMBIAR DE CHAT ---
+  // --- 3. SELECCIONAR CONVERSACIÓN ---
   const seleccionarConversacion = async (convId) => {
     if (convId === currentConversationId) {
       setSidebarOpen(false);
@@ -214,6 +208,21 @@ export default function Home() {
     }
   };
 
+  // --- 6. EXPORTAR CONVERSACIÓN ---
+  const exportarMarkdown = () => {
+    if (!currentConversationId) {
+      alert('Inicia una conversación para poder exportarla.');
+      return;
+    }
+    window.open(`${API_URL}/assistant/conversation/${currentConversationId}/export/markdown`, '_blank');
+    setExportMenuOpen(false);
+  };
+
+  const exportarPDF = () => {
+    setExportMenuOpen(false);
+    window.print();
+  };
+
   // --- CONTROLADOR DE IMAGEN ---
   const handleImageSelect = (e) => {
     const file = e.target.files[0];
@@ -257,7 +266,7 @@ export default function Home() {
     if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
-  // --- 6. ENVIAR MENSAJE CON STREAMING EN TIEMPO REAL (SSE) ---
+  // --- 7. ENVIAR MENSAJE CON STREAMING SSE Y AUTO-TITULADO ---
   const handleSend = async (e) => {
     e.preventDefault();
     if ((!input.trim() && !selectedImage) || loading) return;
@@ -271,7 +280,6 @@ export default function Home() {
     setInput('');
     handleRemoveImage();
 
-    // 1. Agregar mensaje del usuario y crear placeholder del asistente
     setMessages((prev) => [
       ...prev,
       {
@@ -311,7 +319,7 @@ export default function Home() {
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n\n');
-        buffer = lines.pop(); // Guarda fragmentos incompletos para el siguiente chunk
+        buffer = lines.pop();
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -321,13 +329,15 @@ export default function Home() {
             try {
               const data = JSON.parse(rawData);
 
-              // Si es una conversación nueva, vincular el conversation_id y recargar sidebar
               if (data.conversation_id && !currentConversationId) {
                 setCurrentConversationId(data.conversation_id);
-                cargarConversaciones();
               }
 
-              // Concatenar el token al último mensaje del asistente
+              // Si el backend emite un nuevo título inteligente, actualizamos la lista
+              if (data.new_title) {
+                cargarConversaciones(searchTerm);
+              }
+
               setMessages((prev) => {
                 const updated = [...prev];
                 const lastIndex = updated.length - 1;
@@ -343,7 +353,7 @@ export default function Home() {
                 return updated;
               });
             } catch (err) {
-              console.error('Error parseando fragmento SSE:', err);
+              console.error('Error parseando chunk SSE:', err);
             }
           }
         }
@@ -355,7 +365,7 @@ export default function Home() {
         if (updated[lastIndex]?.role === 'assistant') {
           updated[lastIndex] = {
             role: 'assistant',
-            content: '⚠️ No se pudo conectar con el backend. Comprueba la red o vuelve a intentarlo.',
+            content: '⚠️ No se pudo conectar con el backend.',
             intent: 'ERROR'
           };
         }
@@ -363,6 +373,7 @@ export default function Home() {
       });
     } finally {
       setLoading(false);
+      cargarConversaciones(searchTerm);
     }
   };
 
@@ -438,7 +449,7 @@ export default function Home() {
       mediaRecorder.start();
       setIsRecording(true);
     } catch (err) {
-      alert('Permiso de micrófono denegado o dispositivo no compatible.');
+      alert('Permiso de micrófono denegado.');
     }
   };
 
@@ -455,9 +466,6 @@ export default function Home() {
     const formData = new FormData();
     formData.append('file', blob, 'voice_input.webm');
     formData.append('user_id', userId);
-    if (currentConversationId) {
-      formData.append('conversation_id', currentConversationId);
-    }
 
     try {
       const response = await fetch(`${API_URL}/assistant/voice`, {
@@ -468,14 +476,7 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Error en el servidor de voz.');
 
-      if (!currentConversationId && data.conversation_id) {
-        setCurrentConversationId(data.conversation_id);
-        cargarConversaciones();
-      }
-
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response, intent: data.intent }]);
-
-      // Auto-reproducir respuesta por voz en notas de voz
       reproducirAudioTexto(data.response);
     } catch (error) {
       setMessages((prev) => [
@@ -489,7 +490,6 @@ export default function Home() {
 
   return (
     <div className="flex h-[100dvh] w-full max-w-full overflow-hidden bg-slate-950 text-slate-100 font-sans">
-      {/* FONDO OSCURO PARA MÓVILES */}
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -503,7 +503,7 @@ export default function Home() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
-        {/* BOTÓN SUPERIOR: NUEVO CHAT */}
+        {/* BOTÓN NUEVO CHAT */}
         <div className="p-3.5 border-b border-slate-800 flex items-center gap-2">
           <button
             onClick={crearNuevoChat}
@@ -520,15 +520,36 @@ export default function Home() {
           </button>
         </div>
 
+        {/* BUSCADOR DE CONVERSACIONES */}
+        <div className="px-3 pt-2.5 pb-1">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="🔍 Buscar en chats..."
+              className="w-full bg-slate-950/80 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-1.5 text-slate-400 hover:text-white text-xs"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* LISTADO DE CONVERSACIONES */}
         <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800">
           <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-2 py-1">
-            Tus Conversaciones
+            {searchTerm ? 'Resultados de Búsqueda' : 'Tus Conversaciones'}
           </div>
 
           {conversations.length === 0 ? (
             <div className="text-xs text-slate-400 text-center py-6 px-3">
-              No tienes chats previos. ¡Inicia uno nuevo!
+              {searchTerm ? 'No se encontraron coincidencias.' : 'No tienes chats previos.'}
             </div>
           ) : (
             conversations.map((c) => {
@@ -561,7 +582,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* PIE DEL SIDEBAR: USUARIO */}
+        {/* PIE DEL SIDEBAR */}
         <div className="p-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
           <div className="flex items-center gap-2 truncate">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -594,8 +615,41 @@ export default function Home() {
             </span>
           </div>
 
-          {/* ACCIONES Y BOTÓN RAG */}
+          {/* ACCIONES DE CABECERA: RAG, EXPORTACIÓN Y USUARIO */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* MENÚ DE EXPORTACIÓN */}
+            {currentConversationId && (
+              <div className="relative">
+                <button
+                  onClick={() => setExportMenuOpen(!exportMenuOpen)}
+                  title="Exportar conversación"
+                  className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 sm:px-3 py-1.5 rounded-lg font-medium transition-all shadow-sm flex items-center gap-1.5"
+                >
+                  <span>📥</span>
+                  <span className="hidden sm:inline">Exportar</span>
+                </button>
+
+                {exportMenuOpen && (
+                  <div className="absolute right-0 mt-1.5 w-44 bg-slate-900 border border-slate-700 rounded-xl shadow-xl py-1 z-50 text-xs">
+                    <button
+                      onClick={exportarMarkdown}
+                      className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                    >
+                      <span>📝</span>
+                      <span>Descargar Markdown (.md)</span>
+                    </button>
+                    <button
+                      onClick={exportarPDF}
+                      className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                    >
+                      <span>📄</span>
+                      <span>Imprimir / PDF</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <input
               type="file"
               ref={fileInputRef}
@@ -630,7 +684,7 @@ export default function Home() {
         </header>
 
         {/* ZONA DE MENSAJES */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4 max-w-4xl w-full mx-auto min-w-0">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4 max-w-4xl w-full mx-auto min-w-0 print:p-0 print:max-w-full">
           {messages.map((msg, index) => {
             const isLastMessage = index === messages.length - 1;
             const isStreamingEmpty = msg.role === 'assistant' && msg.content === '' && loading && isLastMessage;
@@ -638,10 +692,10 @@ export default function Home() {
             return (
               <div
                 key={index}
-                className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} w-full`}
+                className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} w-full print:block print:mb-4`}
               >
                 <div
-                  className={`max-w-[92%] sm:max-w-[80%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed shadow-sm break-words ${
+                  className={`max-w-[92%] sm:max-w-[80%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed shadow-sm break-words print:max-w-full print:bg-transparent print:border-none print:text-black ${
                     msg.role === 'user'
                       ? 'bg-blue-600 text-white rounded-br-none whitespace-pre-wrap'
                       : msg.intent === 'ERROR'
@@ -667,15 +721,15 @@ export default function Home() {
                     </div>
                   ) : (
                     <>
-                      <div className="space-y-2 [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:ml-4 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:ml-4 [&>ol]:space-y-1 [&>pre]:bg-slate-950 [&>pre]:p-3 [&>pre]:rounded-lg [&>pre]:overflow-x-auto [&>code]:bg-slate-800 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>table]:w-full [&>table]:my-2 [&>table]:border-collapse [&>table]:text-xs [&>table]:overflow-x-auto [&>table]:block [&>thead]:bg-slate-800/80 [&>th]:border [&>th]:border-slate-700 [&>th]:p-2 [&>th]:text-left [&>th]:font-semibold [&>td]:border [&>td]:border-slate-800 [&>td]:p-2">
+                      <div className="space-y-2 [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:ml-4 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:ml-4 [&>ol]:space-y-1 [&>pre]:bg-slate-950 [&>pre]:p-3 [&>pre]:rounded-lg [&>pre]:overflow-x-auto [&>code]:bg-slate-800 [&>code]:px-1.5 [&>code]:py-0.5 [&>code]:rounded [&>table]:w-full [&>table]:my-2 [&>table]:border-collapse [&>table]:text-xs [&>table]:overflow-x-auto [&>table]:block [&>thead]:bg-slate-800/80 [&>th]:border [&>th]:border-slate-700 [&>th]:p-2 [&>th]:text-left [&>th]:font-semibold [&>td]:border [&>td]:border-slate-800 [&>td]:p-2 print:text-black">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {msg.content}
                         </ReactMarkdown>
                       </div>
 
-                      {/* BOTÓN DE ALTAVOZ / ESTADO DE AUDIO */}
+                      {/* BOTÓN TTS */}
                       {msg.content && (
-                        <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800/60">
+                        <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800/60 print:hidden">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -716,7 +770,7 @@ export default function Home() {
                   )}
                 </div>
                 {msg.intent && (
-                  <span className="text-[9px] sm:text-[10px] text-slate-400 mt-1 px-1 font-mono uppercase">
+                  <span className="text-[9px] sm:text-[10px] text-slate-400 mt-1 px-1 font-mono uppercase print:hidden">
                     Intención: {msg.intent}
                   </span>
                 )}
@@ -727,7 +781,7 @@ export default function Home() {
         </main>
 
         {/* BARRA DE ENTRADA (FOOTER) */}
-        <footer className="p-2.5 sm:p-4 bg-slate-900/90 border-t border-slate-800 backdrop-blur-md shrink-0 w-full">
+        <footer className="p-2.5 sm:p-4 bg-slate-900/90 border-t border-slate-800 backdrop-blur-md shrink-0 w-full print:hidden">
           {imagePreview && (
             <div className="max-w-4xl mx-auto mb-2 flex items-center gap-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800 w-fit">
               <div className="relative">
@@ -757,7 +811,6 @@ export default function Home() {
               className="hidden"
             />
 
-            {/* BOTÓN ADJUNTAR */}
             <button
               type="button"
               onClick={() => imageInputRef.current?.click()}
@@ -770,7 +823,6 @@ export default function Home() {
               </svg>
             </button>
 
-            {/* BOTÓN MICRÓFONO */}
             <button
               type="button"
               onMouseDown={startRecording}
@@ -789,7 +841,6 @@ export default function Home() {
               </svg>
             </button>
 
-            {/* CAMPO DE TEXTO */}
             <input
               type="text"
               value={input}
@@ -805,7 +856,6 @@ export default function Home() {
               className="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-60"
             />
 
-            {/* BOTÓN ENVIAR */}
             <button
               type="submit"
               disabled={loading || (!input.trim() && !selectedImage) || isRecording}
